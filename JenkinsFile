@@ -8,11 +8,11 @@ pipeline {
 
     environment {
         APP_NAME = 'streamlit-app'
-        DOCKER_REGISTRY = 'docker.io/your-dockerhub-username'  // ← UPDATE THIS
+        DOCKER_REGISTRY = 'docker.io/dockeraaradhana'  // ← UPDATE THIS
         IMAGE_TAG = "${DOCKER_REGISTRY}/${APP_NAME}:${BUILD_NUMBER}"
         LATEST_TAG = "${DOCKER_REGISTRY}/${APP_NAME}:latest"
-        GIT_USER_NAME = 'your-github-username'                  // ← UPDATE THIS
-        GIT_REPO_NAME = 'your-gitops-repo-name'                 // ← UPDATE THIS (separate GitOps repo)
+        GIT_USER_NAME = 'AIFry-Py3'                  // ← UPDATE THIS
+        GIT_REPO_NAME = 'Inventory-management-system-devops'                 // ← UPDATE THIS (separate GitOps repo)
     }
 
     options {
