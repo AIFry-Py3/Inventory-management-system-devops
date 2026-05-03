@@ -1,6 +1,162 @@
 pipeline {
-  agent {
-    docker {
-      image 'python:3.11-slim'
-      args '-v /var/run/docker.sock:/var/run/docker.sock'
-      
+    agent {
+        docker {
+            image 'python:3.11-slim'
+            args '--user root -v /var/run/docker.sock:/var/run/docker.sock -v /root/.docker:/root/.docker'
+        }
+    }
+
+    environment {
+        APP_NAME = 'streamlit-app'
+        DOCKER_REGISTRY = 'docker.io/your-dockerhub-username'  // ← UPDATE THIS
+        IMAGE_TAG = "${DOCKER_REGISTRY}/${APP_NAME}:${BUILD_NUMBER}"
+        LATEST_TAG = "${DOCKER_REGISTRY}/${APP_NAME}:latest"
+        GIT_USER_NAME = 'your-github-username'                  // ← UPDATE THIS
+        GIT_REPO_NAME = 'your-gitops-repo-name'                 // ← UPDATE THIS (separate GitOps repo)
+    }
+
+    options {
+        timeout(time: 20, unit: 'MINUTES')
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '5'))
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo '📦 Checking out source code...'
+                // checkout scm is automatic
+                sh 'git config --global --add safe.directory $WORKSPACE'
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                echo '📥 Installing Python dependencies...'
+                sh 'pip install --upgrade pip'
+                sh 'pip install -r requirements.txt'
+            }
+        }
+
+        stage('Run Tests') {
+            steps {
+                echo '🧪 Running unit tests...'
+                // Run tests in parallel (pytest auto-discovers tests/ folder)
+                sh 'pytest tests/ -v --tb=short'
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                echo '🐳 Building Docker image...'
+                sh 'docker build -t ${IMAGE_TAG} -f Dockerfile .'
+                // Also tag as latest for easier local testing
+                sh 'docker tag ${IMAGE_TAG} ${LATEST_TAG}'
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                echo '📤 Pushing Docker image to registry...'
+                withCredentials([usernamePassword(credentialsId: 'docker-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh 'echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin'
+                    sh 'docker push ${IMAGE_TAG}'
+                    sh 'docker push ${LATEST_TAG}'
+                }
+            }
+        }
+
+        stage('Update Kubernetes Manifests') {
+            steps {
+                echo '🔄 Updating Kubernetes deployment manifests...'
+                script {
+                    // Option 1: Update manifests in THIS repo (for initial setup)
+                    sh '''
+                        sed -i "s|image: ${DOCKER_REGISTRY}/${APP_NAME}:.*|image: ${IMAGE_TAG}|g" deployment.yaml
+                    '''
+                    
+                    // Option 2: Push to separate GitOps repo (ultimate strategy)
+                    // Uncomment when you have GitOps repo ready:
+                    /*
+                    withCredentials([string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN')]) {
+                        sh '''
+                            git clone https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}.git gitops-repo
+                            cd gitops-repo
+                            git config user.email "jenkins@ci.local"
+                            git config user.name "Jenkins CI"
+                            sed -i "s|image: ${DOCKER_REGISTRY}/${APP_NAME}:.*|image: ${IMAGE_TAG}|g" deployment.yaml
+                            git add deployment.yaml
+                            git commit -m "🚀 Update ${APP_NAME} to ${IMAGE_TAG} [Jenkins #${BUILD_NUMBER}]"
+                            git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}.git HEAD:main
+                        '''
+                    }
+                    */
+                }
+            }
+        }
+
+        stage('Deploy to Kind Cluster') {
+            steps {
+                echo '🚀 Deploying to Kind Kubernetes cluster...'
+                script {
+                    // Ensure kubectl is available
+                    sh '''
+                        if ! command -v kubectl &> /dev/null; then
+                            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+                            chmod +x kubectl
+                            mv kubectl /usr/local/bin/
+                        fi
+                    '''
+                    
+                    // Apply Kubernetes manifests
+                    sh '''
+                        kubectl apply -f deployment.yaml
+                        kubectl apply -f service.yaml
+                        kubectl apply -f secret.yaml
+                    '''
+                    
+                    // Wait for rollout
+                    sh 'kubectl rollout status deployment/${APP_NAME} --timeout=120s'
+                    
+                    // Show pod status
+                    sh 'kubectl get pods -l app=${APP_NAME}'
+                }
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                echo '✅ Verifying deployment...'
+                script {
+                    // Get service URL (for Kind, usually NodePort or port-forward)
+                    sh '''
+                        kubectl get svc ${APP_NAME}
+                        echo "Deployment complete! Access your app via:"
+                        echo "kubectl port-forward svc/${APP_NAME} 8501:8501"
+                        echo "Then visit: http://localhost:8501"
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo '🧹 Cleaning up...'
+            // Clean Docker to save space
+            sh 'docker system prune -f || true'
+            // Remove gitops-repo if cloned
+            sh 'rm -rf gitops-repo || true'
+        }
+        success {
+            echo '✅ Pipeline completed successfully!'
+            echo "🎉 Image pushed: ${IMAGE_TAG}"
+        }
+        failure {
+            echo '❌ Pipeline failed. Check console output for details.'
+        }
+        unstable {
+            echo '⚠️ Pipeline completed with warnings.'
+        }
+    }
+}
