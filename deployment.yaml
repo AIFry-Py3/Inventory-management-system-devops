@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+meta
+  name: stockseva-app
+  labels:
+    app: stockseva
+spec:
+  replicas: 2  # High availability
+  selector:
+    matchLabels:
+      app: stockseva
+  template:
+    metadata:
+      labels:
+        app: stockseva
+    spec:
+      # Security context: non-root user (matches Dockerfile)
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: streamlit
+        image: sharanya5629/stockseva-streamlit:latest  # ← Updated by Jenkins script
+        ports:
+        - containerPort: 8501
+          name: http
+        # ── Resource Limits (tune for your workload) ─────────────────────────
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        # ── Environment Variables (inject secrets via Kubernetes Secrets) ───
+        env:
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: stockseva-secrets
+              key: db-host
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: stockseva-secrets
+              key: db-name
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: stockseva-secrets
+              key: db-user
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: stockseva-secrets
+              key: db-password
+        - name: REDIS_HOST
+          valueFrom:
+            secretKeyRef:
+              name: stockseva-secrets
+              key: redis-host
+        # ── Health Checks (Streamlit provides /_stcore/health) ──────────────
+        livenessProbe:
+          httpGet:
+            path: /_stcore/health
+            port: 8501
+          initialDelaySeconds: 45  # Give Streamlit time to start + connect to DB
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /_stcore/health
+            port: 8501
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 3
+          successThreshold: 1
+        # ── Volume Mounts (if needed for config files) ──────────────────────
+        # volumeMounts:
+        # - name: config
+        #   mountPath: /app/config
+        #   readOnly: true
+      # volumes:
+      # - name: config
+      #   configMap:
+      #     name: stockseva-config

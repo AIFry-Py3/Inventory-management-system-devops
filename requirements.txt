@@ -1,0 +1,20 @@
+# ── Core Streamlit App ──────────────────────────────────────────────────────
+streamlit==1.32.0
+pandas==2.2.1
+numpy==1.26.4
+plotly==5.20.0
+
+# ── Database & Caching ──────────────────────────────────────────────────────
+psycopg2-binary==2.9.12   # PostgreSQL adapter (binary wheels for easy install)
+redis==5.0.3              # Redis client
+
+# ── Resilience & Utilities ──────────────────────────────────────────────────
+tenacity==8.2.3           # Retry logic for database connections
+
+# ── Testing (for CI pipeline) ───────────────────────────────────────────────
+pytest==8.1.1
+pytest-cov==4.1.0
+
+# ── Optional: Production Enhancements ───────────────────────────────────────
+# gunicorn==21.2.0        # If you want to run Streamlit with a WSGI server
+# prometheus-client==0.20.0  # For metrics export (optional)
