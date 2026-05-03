@@ -57,18 +57,7 @@ pipeline {
             steps {
                 echo '🔍 Running SonarQube static analysis...'
                 withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
-                    sh '''
-                        sonar-scanner \
-                            -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                            -Dsonar.projectName="${SONAR_PROJECT_NAME}" \
-                            -Dsonar.sources=. \
-                            -Dsonar.host.url=${SONAR_HOST_URL} \
-                            -Dsonar.login=${SONAR_TOKEN} \
-                            -Dsonar.python.version=3.10 \
-                            -Dsonar.inclusions=**/*.py \
-                            -Dsonar.exclusions=**/tests/**,**/__pycache__/**,**/*.pyc \
-                            -Dsonar.sourceEncoding=UTF-8
-                    '''
+                    sh 'sonar-scanner -Dsonar.host.url=${SONAR_HOST_URL} -Dsonar.login=${SONAR_TOKEN}'
                 }
             }
         }
