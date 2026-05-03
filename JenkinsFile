@@ -7,16 +7,19 @@ pipeline {
     }
 
     environment {
-        APP_NAME = 'streamlit-app'
-        DOCKER_REGISTRY = 'docker.io/dockeraaradhana'  // ← UPDATE THIS
+        APP_NAME = 'stockseva-streamlit'
+        DOCKER_REGISTRY = 'sharanya5629'              // ← Your Docker Hub username
         IMAGE_TAG = "${DOCKER_REGISTRY}/${APP_NAME}:${BUILD_NUMBER}"
         LATEST_TAG = "${DOCKER_REGISTRY}/${APP_NAME}:latest"
-        GIT_USER_NAME = 'AIFry-Py3'                  // ← UPDATE THIS
-        GIT_REPO_NAME = 'Inventory-management-system-devops'                 // ← UPDATE THIS (separate GitOps repo)
+        
+        // SonarQube Configuration
+        SONAR_HOST_URL = 'http://34.201.116.83:9000'  // ← Your SonarQube URL
+        SONAR_PROJECT_KEY = 'stockseva-streamlit'     // ← Unique project key
+        SONAR_PROJECT_NAME = 'StockSeva Streamlit App'
     }
 
     options {
-        timeout(time: 20, unit: 'MINUTES')
+        timeout(time: 25, unit: 'MINUTES')
         disableConcurrentBuilds()
         buildDiscarder(logRotator(numToKeepStr: '5'))
     }
@@ -25,7 +28,6 @@ pipeline {
         stage('Checkout') {
             steps {
                 echo '📦 Checking out source code...'
-                // checkout scm is automatic
                 sh 'git config --global --add safe.directory $WORKSPACE'
             }
         }
@@ -35,14 +37,39 @@ pipeline {
                 echo '📥 Installing Python dependencies...'
                 sh 'pip install --upgrade pip'
                 sh 'pip install -r requirements.txt'
+                // Install SonarScanner CLI
+                sh '''
+                    curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
+                    unzip -q /tmp/sonar-scanner.zip -d /opt/
+                    ln -sf /opt/sonar-scanner-4.8.0.2856-linux/bin/sonar-scanner /usr/local/bin/sonar-scanner
+                '''
             }
         }
 
         stage('Run Tests') {
             steps {
                 echo '🧪 Running unit tests...'
-                // Run tests in parallel (pytest auto-discovers tests/ folder)
                 sh 'pytest tests/ -v --tb=short'
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                echo '🔍 Running SonarQube static analysis...'
+                withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
+                    sh '''
+                        sonar-scanner \
+                            -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                            -Dsonar.projectName="${SONAR_PROJECT_NAME}" \
+                            -Dsonar.sources=. \
+                            -Dsonar.host.url=${SONAR_HOST_URL} \
+                            -Dsonar.login=${SONAR_TOKEN} \
+                            -Dsonar.python.version=3.10 \
+                            -Dsonar.inclusions=**/*.py \
+                            -Dsonar.exclusions=**/tests/**,**/__pycache__/**,**/*.pyc \
+                            -Dsonar.sourceEncoding=UTF-8
+                    '''
+                }
             }
         }
 
@@ -50,7 +77,6 @@ pipeline {
             steps {
                 echo '🐳 Building Docker image...'
                 sh 'docker build -t ${IMAGE_TAG} -f Dockerfile .'
-                // Also tag as latest for easier local testing
                 sh 'docker tag ${IMAGE_TAG} ${LATEST_TAG}'
             }
         }
@@ -70,13 +96,13 @@ pipeline {
             steps {
                 echo '🔄 Updating Kubernetes deployment manifests...'
                 script {
-                    // Option 1: Update manifests in THIS repo (for initial setup)
+                    // Update image tag in deployment.yaml (in this repo)
                     sh '''
                         sed -i "s|image: ${DOCKER_REGISTRY}/${APP_NAME}:.*|image: ${IMAGE_TAG}|g" deployment.yaml
                     '''
                     
-                    // Option 2: Push to separate GitOps repo (ultimate strategy)
-                    // Uncomment when you have GitOps repo ready:
+                    // Optional: Push to separate GitOps repo for ArgoCD
+                    // Uncomment when ready:
                     /*
                     withCredentials([string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN')]) {
                         sh '''
@@ -108,7 +134,7 @@ pipeline {
                         fi
                     '''
                     
-                    // Apply Kubernetes manifests
+                    // Apply manifests
                     sh '''
                         kubectl apply -f deployment.yaml
                         kubectl apply -f service.yaml
@@ -117,9 +143,7 @@ pipeline {
                     
                     // Wait for rollout
                     sh 'kubectl rollout status deployment/${APP_NAME} --timeout=120s'
-                    
-                    // Show pod status
-                    sh 'kubectl get pods -l app=${APP_NAME}'
+                    sh 'kubectl get pods -l app=stockseva'
                 }
             }
         }
@@ -128,11 +152,10 @@ pipeline {
             steps {
                 echo '✅ Verifying deployment...'
                 script {
-                    // Get service URL (for Kind, usually NodePort or port-forward)
                     sh '''
                         kubectl get svc ${APP_NAME}
-                        echo "Deployment complete! Access your app via:"
-                        echo "kubectl port-forward svc/${APP_NAME} 8501:8501"
+                        echo "🎉 Deployment complete!"
+                        echo "Access via: kubectl port-forward svc/${APP_NAME} 8501:8501"
                         echo "Then visit: http://localhost:8501"
                     '''
                 }
@@ -143,20 +166,18 @@ pipeline {
     post {
         always {
             echo '🧹 Cleaning up...'
-            // Clean Docker to save space
             sh 'docker system prune -f || true'
-            // Remove gitops-repo if cloned
-            sh 'rm -rf gitops-repo || true'
+            sh 'rm -rf gitops-repo /tmp/sonar-scanner.zip /opt/sonar-scanner-* || true'
         }
         success {
             echo '✅ Pipeline completed successfully!'
-            echo "🎉 Image pushed: ${IMAGE_TAG}"
+            echo "🎉 Image: ${IMAGE_TAG} | SonarQube: ${SONAR_HOST_URL}/dashboard?id=${SONAR_PROJECT_KEY}"
         }
         failure {
-            echo '❌ Pipeline failed. Check console output for details.'
+            echo '❌ Pipeline failed. Check console output.'
         }
         unstable {
-            echo '⚠️ Pipeline completed with warnings.'
+            echo '⚠️ Pipeline completed with warnings (e.g., SonarQube quality gate).'
         }
     }
 }
