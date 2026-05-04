@@ -14,6 +14,7 @@ pipeline {
         SONAR_PROJECT_KEY = 'inventory-management'
         GIT_EMAIL = 'sharanya@gmail.com'
         GIT_USER = 'Sharky404'
+        GIT_REPO_URL = 'https://github.com/AIFry-Py3/Inventory-management-system-devops.git'
     }
 
     options {
@@ -23,6 +24,13 @@ pipeline {
     }
 
     stages {
+        stage('Install Docker CLI in Agent') {  // ← NEW: Ensures docker command exists
+            steps {
+                echo '🔧 Installing Docker CLI...'
+                sh 'apt-get update && apt-get install -y docker.io'
+            }
+        }
+
         stage('Checkout') {
             steps {
                 echo '📦 Checking out source...'
@@ -30,9 +38,10 @@ pipeline {
             }
         }
 
-        stage('Install Dependencies') {
+        stage('Setup Environment') {
             steps {
-                echo '📥 Installing Python deps & SonarScanner...'
+                echo '📥 Installing deps & SonarScanner...'
+                sh 'apt-get update && apt-get install -y git curl unzip'
                 sh 'pip install --upgrade pip && pip install -r requirements.txt'
                 sh '''
                     curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
@@ -76,7 +85,7 @@ pipeline {
 
         stage('Push Docker Image') {
             steps {
-                echo ' Pushing to Docker Hub...'
+                echo '📤 Pushing to Docker Hub...'
                 withCredentials([usernamePassword(credentialsId: 'docker-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                     sh 'echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin'
                     sh 'docker push ${IMAGE_TAG}'
@@ -84,9 +93,9 @@ pipeline {
             }
         }
 
-        stage('Update Manifests & Push to Git') {
+        stage('Update Manifest & Push to Git') {
             steps {
-                echo '🔄 Updating deployment.yaml & pushing to same repo...'
+                echo '🔄 Updating deployment.yaml...'
                 withCredentials([string(credentialsId: 'github', variable: 'GITHUB_TOKEN')]) {
                     script {
                         sh '''
@@ -94,7 +103,7 @@ pipeline {
                             git config user.name "${GIT_USER}"
                             sed -i "s|image: ${DOCKER_REGISTRY}/${APP_NAME}:.*|image: ${IMAGE_TAG}|g" deployment.yaml
                             git add deployment.yaml
-                            git commit -m "🚀 Update ${APP_NAME} to ${IMAGE_TAG} [Jenkins #${BUILD_NUMBER}]" || echo "No changes to commit"
+                            git commit -m "🚀 Update ${APP_NAME} to ${IMAGE_TAG} [Jenkins #${BUILD_NUMBER}]" || echo "⚠️ No changes"
                             git push https://${GITHUB_TOKEN}@github.com/AIFry-Py3/Inventory-management-system-devops.git HEAD:main
                         '''
                     }
@@ -105,135 +114,17 @@ pipeline {
 
     post {
         always {
-            echo ' Cleaning up...'
-            sh 'docker system prune -f || true'
-            sh 'rm -rf /tmp/sonar-scanner.zip /opt/sonar-scanner-* || true'
+            node {
+                echo '🧹 Cleaning up...'
+                sh 'docker system prune -f || true'
+                sh 'rm -rf /tmp/sonar-scanner.zip /opt/sonar-scanner-* || true'
+            }
         }
         success {
-            echo '✅ Pipeline succeeded! ArgoCD will auto-sync from the updated manifest.'
+            node { echo '✅ Pipeline succeeded! ArgoCD will auto-sync.' }
         }
         failure {
-            echo '❌ Pipeline failed. Check console output.'
-        }
-    }
-}
-
-pipeline {
-    agent {
-        docker {
-            image 'python:3.10-slim'
-            args '--user root -v /var/run/docker.sock:/var/run/docker.sock --network jenkins'
-        }
-    }
-
-    environment {
-        APP_NAME = 'inventory-management'
-        DOCKER_REGISTRY = 'dockeraaradhana'
-        IMAGE_TAG = "${DOCKER_REGISTRY}/${APP_NAME}:${BUILD_NUMBER}"
-        SONAR_URL = 'http://sonarqube:9000'
-        SONAR_PROJECT_KEY = 'inventory-management'
-        GIT_EMAIL = 'sharanya@gmail.com'
-        GIT_USER = 'Sharky404'
-    }
-
-    options {
-        timeout(time: 20, unit: 'MINUTES')
-        disableConcurrentBuilds()
-        buildDiscarder(logRotator(numToKeepStr: '5'))
-    }
-
-    stages {
-        stage('Checkout') {
-            steps {
-                echo '📦 Checking out source...'
-                sh 'git config --global --add safe.directory $WORKSPACE'
-            }
-        }
-
-        stage('Install Dependencies') {
-            steps {
-                echo '📥 Installing Python deps & SonarScanner...'
-                sh 'pip install --upgrade pip && pip install -r requirements.txt'
-                sh '''
-                    curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
-                    unzip -q /tmp/sonar-scanner.zip -d /opt/
-                    ln -sf /opt/sonar-scanner-4.8.0.2856-linux/bin/sonar-scanner /usr/local/bin/sonar-scanner
-                '''
-            }
-        }
-
-        stage('Run Tests') {
-            steps {
-                echo '🧪 Running pytest...'
-                sh 'pytest tests/ -v --tb=short'
-            }
-        }
-
-        stage('SonarQube Analysis') {
-            steps {
-                echo '🔍 Running SonarQube...'
-                withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_TOKEN')]) {
-                    sh '''
-                        sonar-scanner \
-                            -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                            -Dsonar.sources=. \
-                            -Dsonar.host.url=${SONAR_URL} \
-                            -Dsonar.login=${SONAR_TOKEN} \
-                            -Dsonar.python.version=3.10 \
-                            -Dsonar.inclusions=**/*.py \
-                            -Dsonar.exclusions=**/tests/**,**/__pycache__/**,**/*.pyc
-                    '''
-                }
-            }
-        }
-
-        stage('Build Docker Image') {
-            steps {
-                echo '🐳 Building image...'
-                sh 'docker build -t ${IMAGE_TAG} -f Dockerfile .'
-            }
-        }
-
-        stage('Push Docker Image') {
-            steps {
-                echo ' Pushing to Docker Hub...'
-                withCredentials([usernamePassword(credentialsId: 'docker-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh 'echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin'
-                    sh 'docker push ${IMAGE_TAG}'
-                }
-            }
-        }
-
-        stage('Update Manifests & Push to Git') {
-            steps {
-                echo '🔄 Updating deployment.yaml & pushing to same repo...'
-                withCredentials([string(credentialsId: 'github', variable: 'GITHUB_TOKEN')]) {
-                    script {
-                        sh '''
-                            git config user.email "${GIT_EMAIL}"
-                            git config user.name "${GIT_USER}"
-                            sed -i "s|image: ${DOCKER_REGISTRY}/${APP_NAME}:.*|image: ${IMAGE_TAG}|g" deployment.yaml
-                            git add deployment.yaml
-                            git commit -m "🚀 Update ${APP_NAME} to ${IMAGE_TAG} [Jenkins #${BUILD_NUMBER}]" || echo "No changes to commit"
-                            git push https://${GITHUB_TOKEN}@github.com/AIFry-Py3/Inventory-management-system-devops.git HEAD:main
-                        '''
-                    }
-                }
-            }
-        }
-    }
-
-    post {
-        always {
-            echo ' Cleaning up...'
-            sh 'docker system prune -f || true'
-            sh 'rm -rf /tmp/sonar-scanner.zip /opt/sonar-scanner-* || true'
-        }
-        success {
-            echo '✅ Pipeline succeeded! ArgoCD will auto-sync from the updated manifest.'
-        }
-        failure {
-            echo '❌ Pipeline failed. Check console output.'
+            node { echo '❌ Pipeline failed. Check console output.' }
         }
     }
 }
