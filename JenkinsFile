@@ -1,10 +1,5 @@
 pipeline {
-    agent {
-        docker {
-            image 'python:3.10-slim'
-            args '--user root -v /var/run/docker.sock:/var/run/docker.sock --network jenkins'
-        }
-    }
+    agent any  // ← Changed from 'docker' to 'any'
 
     environment {
         APP_NAME = 'inventory-management'
@@ -24,10 +19,20 @@ pipeline {
     }
 
     stages {
-        stage('Install Docker CLI in Agent') {  // ← NEW: Ensures docker command exists
+        stage('Install Build Tools') {
             steps {
-                echo '🔧 Installing Docker CLI...'
-                sh 'apt-get update && apt-get install -y docker.io'
+                echo '🔧 Installing Docker CLI, Python, and SonarScanner...'
+                sh '''
+                    apt-get update
+                    apt-get install -y docker.io python3 python3-pip git curl unzip
+                    ln -sf /usr/bin/python3 /usr/bin/python
+                    ln -sf /usr/bin/pip3 /usr/bin/pip
+                    pip install --upgrade pip
+                    pip install -r requirements.txt
+                    curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
+                    unzip -q /tmp/sonar-scanner.zip -d /opt/
+                    ln -sf /opt/sonar-scanner-4.8.0.2856-linux/bin/sonar-scanner /usr/local/bin/sonar-scanner
+                '''
             }
         }
 
@@ -35,19 +40,6 @@ pipeline {
             steps {
                 echo '📦 Checking out source...'
                 sh 'git config --global --add safe.directory $WORKSPACE'
-            }
-        }
-
-        stage('Setup Environment') {
-            steps {
-                echo '📥 Installing deps & SonarScanner...'
-                sh 'apt-get update && apt-get install -y git curl unzip'
-                sh 'pip install --upgrade pip && pip install -r requirements.txt'
-                sh '''
-                    curl -sSLo /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
-                    unzip -q /tmp/sonar-scanner.zip -d /opt/
-                    ln -sf /opt/sonar-scanner-4.8.0.2856-linux/bin/sonar-scanner /usr/local/bin/sonar-scanner
-                '''
             }
         }
 
@@ -114,17 +106,15 @@ pipeline {
 
     post {
         always {
-            node {
-                echo '🧹 Cleaning up...'
-                sh 'docker system prune -f || true'
-                sh 'rm -rf /tmp/sonar-scanner.zip /opt/sonar-scanner-* || true'
-            }
+            echo '🧹 Cleaning up...'
+            sh 'docker system prune -f || true'
+            sh 'rm -rf /tmp/sonar-scanner.zip /opt/sonar-scanner-* || true'
         }
         success {
-            node { echo '✅ Pipeline succeeded! ArgoCD will auto-sync.' }
+            echo '✅ Pipeline succeeded! ArgoCD will auto-sync.'
         }
         failure {
-            node { echo '❌ Pipeline failed. Check console output.' }
+            echo '❌ Pipeline failed. Check console output.'
         }
     }
 }
