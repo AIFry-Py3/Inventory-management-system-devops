@@ -9,6 +9,7 @@ pipeline {
         GIT_EMAIL = 'sharanya@gmail.com'
         GIT_USER = 'Sharky404'
         GIT_REPO_URL = 'https://github.com/AIFry-Py3/Inventory-management-system-devops.git'
+        WORKSPACE = "${env.WORKSPACE}"
     }
     options {
         timeout(time: 20, unit: 'MINUTES')
@@ -16,6 +17,19 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '5'))
     }
     stages {
+        stage('Ensure Docker CLI') {
+            steps {
+                script {
+                    // Install static Docker CLI binary if missing (one-time per container)
+                    sh '''
+                        if ! command -v docker &> /dev/null; then
+                            curl -fsSL https://github.com/docker/cli/releases/download/v24.0.7/docker-24.0.7.tgz | \
+                            tar xz -C /usr/local/bin --strip-components=1 docker/cli
+                        fi
+                    '''
+                }
+            }
+        }
         stage('Checkout') {
             steps {
                 sh 'git config --global --add safe.directory $WORKSPACE'
@@ -23,40 +37,75 @@ pipeline {
         }
         stage('Install Python Dependencies') {
             steps {
-                sh 'pip install --upgrade pip && pip install -r requirements.txt'
+                // Run pip inside official Python image
+                sh '''
+                    docker run --rm \
+                        -v ${WORKSPACE}:/workspace \
+                        -w /workspace \
+                        python:3.10-slim \
+                        bash -c "pip install --upgrade pip && pip install -r requirements.txt"
+                '''
             }
         }
         stage('Run Tests') {
             steps {
-                sh 'pytest tests/ -v --tb=short'
+                // Run pytest inside Python image with deps already installed (via volume)
+                sh '''
+                    docker run --rm \
+                        -v ${WORKSPACE}:/workspace \
+                        -w /workspace \
+                        python:3.10-slim \
+                        pytest tests/ -v --tb=short
+                '''
             }
         }
         stage('SonarQube Analysis') {
             steps {
                 withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_TOKEN')]) {
                     sh '''
-                        sonar-scanner \
-                            -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                            -Dsonar.sources=. \
-                            -Dsonar.host.url=${SONAR_URL} \
-                            -Dsonar.login=${SONAR_TOKEN} \
-                            -Dsonar.python.version=3.10 \
-                            -Dsonar.inclusions=**/*.py \
-                            -Dsonar.exclusions=**/tests/**,**/__pycache__/**,**/*.pyc
+                        docker run --rm \
+                            -v ${WORKSPACE}:/workspace \
+                            -w /workspace \
+                            -e SONAR_TOKEN=${SONAR_TOKEN} \
+                            -e SONAR_URL=${SONAR_URL} \
+                            -e SONAR_PROJECT_KEY=${SONAR_PROJECT_KEY} \
+                            sonarsource/sonar-scanner-cli:4.8 \
+                            sonar-scanner \
+                                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                                -Dsonar.sources=. \
+                                -Dsonar.host.url=${SONAR_URL} \
+                                -Dsonar.login=${SONAR_TOKEN} \
+                                -Dsonar.python.version=3.10 \
+                                -Dsonar.inclusions=**/*.py \
+                                -Dsonar.exclusions=**/tests/**,**/__pycache__/**,**/*.pyc
                     '''
                 }
             }
         }
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t ${IMAGE_TAG} -f Dockerfile .'
+                // Docker-in-Docker: mount host socket + workspace
+                sh '''
+                    docker run --rm \
+                        -v /var/run/docker.sock:/var/run/docker.sock \
+                        -v ${WORKSPACE}:/workspace \
+                        -w /workspace \
+                        docker:24.0-cli \
+                        docker build -t ${IMAGE_TAG} -f Dockerfile .
+                '''
             }
         }
         stage('Push Docker Image') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'docker-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh 'echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin'
-                    sh 'docker push ${IMAGE_TAG}'
+                    sh '''
+                        docker run --rm \
+                            -v /var/run/docker.sock:/var/run/docker.sock \
+                            -e DOCKER_USER=${DOCKER_USER} \
+                            -e DOCKER_PASS=${DOCKER_PASS} \
+                            docker:24.0-cli \
+                            bash -c "echo \${DOCKER_PASS} | docker login -u \${DOCKER_USER} --password-stdin && docker push ${IMAGE_TAG}"
+                    '''
                 }
             }
         }
@@ -64,12 +113,25 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'github', variable: 'GITHUB_TOKEN')]) {
                     sh '''
-                        git config user.email "${GIT_EMAIL}"
-                        git config user.name "${GIT_USER}"
-                        sed -i "s|image: ${DOCKER_REGISTRY}/${APP_NAME}:.*|image: ${IMAGE_TAG}|g" deployment.yaml
-                        git add deployment.yaml
-                        git commit -m "🚀 Update ${APP_NAME} to ${IMAGE_TAG} [Jenkins #${BUILD_NUMBER}]" || echo "No changes"
-                        git push https://${GITHUB_TOKEN}@github.com/AIFry-Py3/Inventory-management-system-devops.git HEAD:main
+                        docker run --rm \
+                            -v ${WORKSPACE}:/workspace \
+                            -w /workspace \
+                            -e GITHUB_TOKEN=${GITHUB_TOKEN} \
+                            -e GIT_EMAIL=${GIT_EMAIL} \
+                            -e GIT_USER=${GIT_USER} \
+                            -e DOCKER_REGISTRY=${DOCKER_REGISTRY} \
+                            -e APP_NAME=${APP_NAME} \
+                            -e IMAGE_TAG=${IMAGE_TAG} \
+                            -e GIT_REPO_URL=${GIT_REPO_URL} \
+                            alpine/git:2.40.0 \
+                            sh -c '
+                                git config user.email "${GIT_EMAIL}" && \
+                                git config user.name "${GIT_USER}" && \
+                                sed -i "s|image: ${DOCKER_REGISTRY}/${APP_NAME}:.*|image: ${IMAGE_TAG}|g" deployment.yaml && \
+                                git add deployment.yaml && \
+                                git commit -m "🚀 Update ${APP_NAME} to ${IMAGE_TAG} [Jenkins #${BUILD_NUMBER}]" || echo "No changes" && \
+                                git push https://${GITHUB_TOKEN}@github.com/AIFry-Py3/Inventory-management-system-devops.git HEAD:main
+                            '
                     '''
                 }
             }
