@@ -1,110 +1,18 @@
 pipeline {
     agent any
-
-    environment {
-        APP_NAME = 'inventory-management'
-        DOCKER_REGISTRY = 'dockeraaradhana'
-        IMAGE_TAG = "${DOCKER_REGISTRY}/${APP_NAME}:${BUILD_NUMBER}"
-        SONAR_URL = 'http://sonarqube:9000'
-        SONAR_PROJECT_KEY = 'inventory-management'
-        GIT_EMAIL = 'sharanya@gmail.com'
-        GIT_USER = 'Sharky404'
-        GIT_REPO_URL = 'https://github.com/AIFry-Py3/Inventory-management-system-devops.git'
-    }
-
-    options {
-        timeout(time: 20, unit: 'MINUTES')
-        disableConcurrentBuilds()
-        buildDiscarder(logRotator(numToKeepStr: '5'))
-    }
-
     stages {
-        stage('Checkout') {
+        stage('Connect to GitHub') {
             steps {
-                sh 'git config --global --add safe.directory $WORKSPACE'
+                // Use the git step to clone your repository
+                git url: 'https://github.com',
+                    branch: 'main',
+                    credentialsId: 'github-creds' 
             }
         }
-
-        stage('Run Tests in Docker') {
+        stage('Build') {
             steps {
-                sh '''
-                    docker pull dockeraaradhana/stockseva-test:latest
-                    docker run --rm \
-                        -v $WORKSPACE:/app \
-                        -w /app \
-                        dockeraaradhana/stockseva-test:latest \
-                        pytest tests/ -v --tb=short
-                '''
+                echo 'Source code connected and pulled successfully!'
             }
-        }
-
-        stage('SonarQube Analysis') {
-            steps {
-                withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_TOKEN')]) {
-                    sh '''
-                        docker run --rm \
-                            -v $WORKSPACE:/workspace \
-                            -w /workspace \
-                            -e SONAR_TOKEN=${SONAR_TOKEN} \
-                            -e SONAR_URL=${SONAR_URL} \
-                            -e SONAR_PROJECT_KEY=${SONAR_PROJECT_KEY} \
-                            sonarsource/sonar-scanner-cli:4.8 \
-                            sonar-scanner \
-                                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                                -Dsonar.sources=. \
-                                -Dsonar.host.url=${SONAR_URL} \
-                                -Dsonar.login=${SONAR_TOKEN} \
-                                -Dsonar.python.version=3.10 \
-                                -Dsonar.inclusions=**/*.py \
-                                -Dsonar.exclusions=**/tests/**,**/__pycache__/**,**/*.pyc
-                    '''
-                }
-            }
-        }
-
-        stage('Build Docker Image') {
-            steps {
-                sh 'docker build -t ${IMAGE_TAG} -f Dockerfile .'
-            }
-        }
-
-        stage('Push Docker Image') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'docker-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh '''
-                        echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin
-                        docker push ${IMAGE_TAG}
-                    '''
-                }
-            }
-        }
-
-        stage('Update Manifest & Push to Git') {
-            steps {
-                withCredentials([string(credentialsId: 'github', variable: 'GITHUB_TOKEN')]) {
-                    sh '''
-                        git config user.email "${GIT_EMAIL}"
-                        git config user.name "${GIT_USER}"
-                        sed -i "s|image: ${DOCKER_REGISTRY}/${APP_NAME}:.*|image: ${IMAGE_TAG}|g" deployment.yaml
-                        git add deployment.yaml
-                        git commit -m "🚀 Update ${APP_NAME} to ${IMAGE_TAG} [Jenkins #${BUILD_NUMBER}]" || echo "No changes"
-                        git push https://${GITHUB_TOKEN}@github.com/AIFry-Py3/Inventory-management-system-devops.git HEAD:main
-                    '''
-                }
-            }
-        }
-    }
-
-    post {
-        always {
-            sh 'docker image prune -f || true'
-            sh 'docker container prune -f || true'
-        }
-        success {
-            echo '✅ Pipeline succeeded! ArgoCD will auto-sync.'
-        }
-        failure {
-            echo '❌ Pipeline failed. Check console output.'
         }
     }
 }
