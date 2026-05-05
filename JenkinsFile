@@ -99,7 +99,9 @@ pipeline {
     }
     post {
         always {
-            sh 'docker system prune -f || true'
+            // SAFE: Only remove dangling items, never volumes/networks
+            sh 'docker image prune -f || true'
+            sh 'docker container prune -f || true'
         }
         success {
             echo '✅ Pipeline succeeded! ArgoCD will auto-sync.'
