@@ -28,8 +28,12 @@ pipeline {
         stage('Run Tests in Docker') {
             steps {
                 sh '''
-                    docker build -t ${APP_NAME}:test-build -f Dockerfile.test .
-                    docker run --rm ${APP_NAME}:test-build
+                    docker pull dockeraaradhana/stockseva-test:latest
+                    docker run --rm \
+                        -v $WORKSPACE:/app \
+                        -w /app \
+                        dockeraaradhana/stockseva-test:latest \
+                        pytest tests/ -v --tb=short
                 '''
             }
         }
