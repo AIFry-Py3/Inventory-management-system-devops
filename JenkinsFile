@@ -17,19 +17,6 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '5'))
     }
     stages {
-        stage('Ensure Docker CLI') {
-            steps {
-                script {
-                    // Install static Docker CLI binary with CORRECT URL
-                    sh '''
-                        if ! command -v docker &> /dev/null; then
-                            curl -fsSL https://github.com/docker/cli/releases/download/v24.0.7/docker-24.0.7.linux-amd64.tar.gz | \
-                            tar xz -O docker/cli > /usr/local/bin/docker && chmod +x /usr/local/bin/docker
-                        fi
-                    '''
-                }
-            }
-        }
         stage('Checkout') {
             steps {
                 sh 'git config --global --add safe.directory $WORKSPACE'
@@ -119,7 +106,6 @@ pipeline {
                             -e DOCKER_REGISTRY=${DOCKER_REGISTRY} \
                             -e APP_NAME=${APP_NAME} \
                             -e IMAGE_TAG=${IMAGE_TAG} \
-                            -e GIT_REPO_URL=${GIT_REPO_URL} \
                             alpine/git:2.40.0 \
                             sh -c '
                                 git config user.email "${GIT_EMAIL}" && \
@@ -136,7 +122,13 @@ pipeline {
     }
     post {
         always {
-            sh 'docker system prune -f || true'
+            // Run docker prune inside container to avoid host permission issues
+            sh '''
+                docker run --rm \
+                    -v /var/run/docker.sock:/var/run/docker.sock \
+                    docker:24.0-cli \
+                    docker system prune -f || true
+            '''
         }
         success {
             echo '✅ Pipeline succeeded! ArgoCD will auto-sync.'
