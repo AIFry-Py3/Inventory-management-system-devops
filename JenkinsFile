@@ -1,5 +1,6 @@
 pipeline {
     agent any
+
     environment {
         APP_NAME = 'inventory-management'
         DOCKER_REGISTRY = 'dockeraaradhana'
@@ -10,11 +11,13 @@ pipeline {
         GIT_USER = 'Sharky404'
         GIT_REPO_URL = 'https://github.com/AIFry-Py3/Inventory-management-system-devops.git'
     }
+
     options {
         timeout(time: 20, unit: 'MINUTES')
         disableConcurrentBuilds()
         buildDiscarder(logRotator(numToKeepStr: '5'))
     }
+
     stages {
         stage('Checkout') {
             steps {
@@ -24,17 +27,8 @@ pipeline {
 
         stage('Run Tests in Docker') {
             steps {
-                // Build test image with deps, run pytest, discard image
                 sh '''
-                    docker build -t ${APP_NAME}:test-build -f Dockerfile.test . 2>/dev/null || \
-                    docker build -t ${APP_NAME}:test-build - <<'EOF'
-FROM python:3.10-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt pytest
-COPY . .
-CMD ["pytest", "tests/", "-v", "--tb=short"]
-EOF
+                    docker build -t ${APP_NAME}:test-build -f Dockerfile.test .
                     docker run --rm ${APP_NAME}:test-build
                 '''
             }
@@ -96,6 +90,7 @@ EOF
             }
         }
     }
+
     post {
         always {
             sh 'docker image prune -f || true'
@@ -105,7 +100,7 @@ EOF
             echo '✅ Pipeline succeeded! ArgoCD will auto-sync.'
         }
         failure {
-            echo '❌ Pipeline failed.'
+            echo '❌ Pipeline failed. Check console output.'
         }
     }
 }
