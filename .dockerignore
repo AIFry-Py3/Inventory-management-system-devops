@@ -1,55 +1,32 @@
-# Git
-.git
-.gitignore
-
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual environments
 venv/
-ENV/
-env/
 .venv/
 
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Git
+.git/
+.gitignore
+
+# Jenkins
+.jenkins/
+workspace/
+
 # IDE
-.idea/
 .vscode/
+.idea/
 *.swp
 *.swo
 
-# Streamlit
-.streamlit/
-*.log
-
-# Local env files
-.env
-.env.local
-*.env
-
-# Tests
-.pytest_cache/
-htmlcov/
-.coverage
-
-# Kubernetes manifests (if managed separately)
-k8s/*.yaml
-!k8s/deployment.yaml
+# OS
+.DS_Store
+Thumbs.db
