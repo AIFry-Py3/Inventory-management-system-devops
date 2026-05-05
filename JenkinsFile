@@ -1,17 +1,43 @@
 pipeline {
     agent any
 
+    environment {
+        DB_HOST = 'postgres-db'
+        DB_PORT = '5432'
+        DB_NAME = 'mydatabase'
+        DB_USER = 'myuser'
+        DB_PASSWORD = 'mysecretpassword'
+
+        REDIS_HOST = 'redis'
+        REDIS_PORT = '6379'
+    }
+
     stages {
-        stage('Run Streamlit') {
+        stage('Build Image') {
             steps {
                 sh '''
-                python3 -m venv venv
-                . venv/bin/activate
+                docker build -t stockseva-app .
+                '''
+            }
+        }
 
-                pip install --upgrade pip
-                pip install streamlit
+        stage('Run App') {
+            steps {
+                sh '''
+                docker rm -f stockseva-app || true
 
-                nohup streamlit run app.py --server.port 8501 --server.address 0.0.0.0 &
+                docker run -d \
+                  --name stockseva-app \
+                  -p 8501:8501 \
+                  --network devops-net \
+                  -e DB_HOST=$DB_HOST \
+                  -e DB_PORT=$DB_PORT \
+                  -e DB_NAME=$DB_NAME \
+                  -e DB_USER=$DB_USER \
+                  -e DB_PASSWORD=$DB_PASSWORD \
+                  -e REDIS_HOST=$REDIS_HOST \
+                  -e REDIS_PORT=$REDIS_PORT \
+                  stockseva-app
                 '''
             }
         }
