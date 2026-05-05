@@ -9,7 +9,6 @@ pipeline {
         GIT_EMAIL = 'sharanya@gmail.com'
         GIT_USER = 'Sharky404'
         GIT_REPO_URL = 'https://github.com/AIFry-Py3/Inventory-management-system-devops.git'
-        WORKSPACE = "${env.WORKSPACE}"
     }
     options {
         timeout(time: 20, unit: 'MINUTES')
@@ -22,52 +21,36 @@ pipeline {
                 sh 'git config --global --add safe.directory $WORKSPACE'
             }
         }
-        stage('Debug: List Workspace Files') {
+        stage('Install Python Dependencies') {
             steps {
-                sh '''
-                    echo "=== Workspace contents ==="
-                    ls -la /workspace/
-                    echo "=== Find requirements.txt ==="
-                    find /workspace -name "requirements.txt" 2>/dev/null || echo "NOT FOUND"
-                '''
+                // Run pip directly in Jenkins container (python3 already available)
+                sh 'pip3 install --upgrade pip && pip3 install -r requirements.txt'
             }
         }
         stage('Run Tests') {
             steps {
-                sh '''
-                    docker run --rm \
-                        -v ${WORKSPACE}:/workspace \
-                        -w /workspace \
-                        python:3.10-slim \
-                        pytest tests/ -v --tb=short
-                '''
+                sh 'pytest tests/ -v --tb=short'
             }
         }
         stage('SonarQube Analysis') {
             steps {
                 withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_TOKEN')]) {
                     sh '''
-                        docker run --rm \
-                            -v ${WORKSPACE}:/workspace \
-                            -w /workspace \
-                            -e SONAR_TOKEN=${SONAR_TOKEN} \
-                            -e SONAR_URL=${SONAR_URL} \
-                            -e SONAR_PROJECT_KEY=${SONAR_PROJECT_KEY} \
-                            sonarsource/sonar-scanner-cli:4.8 \
-                            sonar-scanner \
-                                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                                -Dsonar.sources=. \
-                                -Dsonar.host.url=${SONAR_URL} \
-                                -Dsonar.login=${SONAR_TOKEN} \
-                                -Dsonar.python.version=3.10 \
-                                -Dsonar.inclusions=**/*.py \
-                                -Dsonar.exclusions=**/tests/**,**/__pycache__/**,**/*.pyc
+                        sonar-scanner \
+                            -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                            -Dsonar.sources=. \
+                            -Dsonar.host.url=${SONAR_URL} \
+                            -Dsonar.login=${SONAR_TOKEN} \
+                            -Dsonar.python.version=3.10 \
+                            -Dsonar.inclusions=**/*.py \
+                            -Dsonar.exclusions=**/tests/**,**/__pycache__/**,**/*.pyc
                     '''
                 }
             }
         }
         stage('Build Docker Image') {
             steps {
+                // Docker CLI already copied to Jenkins container
                 sh 'docker build -t ${IMAGE_TAG} -f Dockerfile .'
             }
         }
@@ -98,7 +81,7 @@ pipeline {
     }
     post {
         always {
-            // SAFE: Only remove dangling items, never volumes/networks
+            // Safe cleanup: only dangling items
             sh 'docker image prune -f || true'
             sh 'docker container prune -f || true'
         }
