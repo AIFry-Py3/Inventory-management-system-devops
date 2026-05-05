@@ -4,11 +4,17 @@ pipeline {
     stages {
         stage('Build') {
             steps {
-                sh 'docker build -t stockseva-app .'
+                sh 'docker build -t stockseva-app:${BUILD_NUMBER} .'
             }
         }
 
-        stage('Run') {
+        stage('Test') {
+            steps {
+                sh 'pytest || exit 1'
+            }
+        }
+
+        stage('Deploy') {
             steps {
                 sh '''
                 docker rm -f stockseva-app || true
@@ -16,6 +22,7 @@ pipeline {
                 docker run -d \
                   --name stockseva-app \
                   --network devops-net \
+                  --restart unless-stopped \
                   -p 8501:8501 \
                   -e DB_HOST=postgres-db \
                   -e DB_PORT=5432 \
@@ -23,7 +30,7 @@ pipeline {
                   -e DB_USER=myuser \
                   -e DB_PASSWORD=mysecretpassword \
                   -e REDIS_HOST=redis \
-                  stockseva-app
+                  stockseva-app:${BUILD_NUMBER}
                 '''
             }
         }
