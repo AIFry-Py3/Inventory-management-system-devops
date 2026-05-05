@@ -69,26 +69,15 @@ pipeline {
         }
         stage('Build Docker Image') {
             steps {
-                sh '''
-                    docker run --rm \
-                        -v /var/run/docker.sock:/var/run/docker.sock \
-                        -v ${WORKSPACE}:/workspace \
-                        -w /workspace \
-                        docker:24.0-cli \
-                        docker build -t ${IMAGE_TAG} -f Dockerfile .
-                '''
+                sh 'docker build -t ${IMAGE_TAG} -f Dockerfile .'
             }
         }
         stage('Push Docker Image') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'docker-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                     sh '''
-                        docker run --rm \
-                            -v /var/run/docker.sock:/var/run/docker.sock \
-                            -e DOCKER_USER=${DOCKER_USER} \
-                            -e DOCKER_PASS=${DOCKER_PASS} \
-                            docker:24.0-cli \
-                            bash -c "echo \${DOCKER_PASS} | docker login -u \${DOCKER_USER} --password-stdin && docker push ${IMAGE_TAG}"
+                        echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin
+                        docker push ${IMAGE_TAG}
                     '''
                 }
             }
@@ -97,24 +86,12 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'github', variable: 'GITHUB_TOKEN')]) {
                     sh '''
-                        docker run --rm \
-                            -v ${WORKSPACE}:/workspace \
-                            -w /workspace \
-                            -e GITHUB_TOKEN=${GITHUB_TOKEN} \
-                            -e GIT_EMAIL=${GIT_EMAIL} \
-                            -e GIT_USER=${GIT_USER} \
-                            -e DOCKER_REGISTRY=${DOCKER_REGISTRY} \
-                            -e APP_NAME=${APP_NAME} \
-                            -e IMAGE_TAG=${IMAGE_TAG} \
-                            alpine/git:2.40.0 \
-                            sh -c '
-                                git config user.email "${GIT_EMAIL}" && \
-                                git config user.name "${GIT_USER}" && \
-                                sed -i "s|image: ${DOCKER_REGISTRY}/${APP_NAME}:.*|image: ${IMAGE_TAG}|g" deployment.yaml && \
-                                git add deployment.yaml && \
-                                git commit -m "🚀 Update ${APP_NAME} to ${IMAGE_TAG} [Jenkins #${BUILD_NUMBER}]" || echo "No changes" && \
-                                git push https://${GITHUB_TOKEN}@github.com/AIFry-Py3/Inventory-management-system-devops.git HEAD:main
-                            '
+                        git config user.email "${GIT_EMAIL}"
+                        git config user.name "${GIT_USER}"
+                        sed -i "s|image: ${DOCKER_REGISTRY}/${APP_NAME}:.*|image: ${IMAGE_TAG}|g" deployment.yaml
+                        git add deployment.yaml
+                        git commit -m "🚀 Update ${APP_NAME} to ${IMAGE_TAG} [Jenkins #${BUILD_NUMBER}]" || echo "No changes"
+                        git push https://${GITHUB_TOKEN}@github.com/AIFry-Py3/Inventory-management-system-devops.git HEAD:main
                     '''
                 }
             }
@@ -122,13 +99,7 @@ pipeline {
     }
     post {
         always {
-            // Run docker prune inside container to avoid host permission issues
-            sh '''
-                docker run --rm \
-                    -v /var/run/docker.sock:/var/run/docker.sock \
-                    docker:24.0-cli \
-                    docker system prune -f || true
-            '''
+            sh 'docker system prune -f || true'
         }
         success {
             echo '✅ Pipeline succeeded! ArgoCD will auto-sync.'
