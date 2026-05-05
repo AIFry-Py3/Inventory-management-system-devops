@@ -23,8 +23,8 @@ pipeline {
         }
         stage('Install Python Dependencies') {
             steps {
-                // PEP 668 fix: --break-system-packages for local dev
-                sh 'python -m pip install --upgrade pip --break-system-packages && python -m pip install -r requirements.txt --break-system-packages'
+                // Skip pip upgrade; install requirements directly with PEP 668 flag
+                sh 'python -m pip install -r requirements.txt --break-system-packages'
             }
         }
         stage('Run Tests') {
