@@ -21,38 +21,55 @@ pipeline {
                 sh 'git config --global --add safe.directory $WORKSPACE'
             }
         }
-        stage('Install Python Dependencies') {
+
+        stage('Run Tests in Docker') {
             steps {
-                // Skip pip upgrade; install requirements directly with PEP 668 flag
-                sh 'python -m pip install -r requirements.txt --break-system-packages'
+                // Build test image with deps, run pytest, discard image
+                sh '''
+                    docker build -t ${APP_NAME}:test-build -f Dockerfile.test . 2>/dev/null || \
+                    docker build -t ${APP_NAME}:test-build - <<'EOF'
+FROM python:3.10-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt pytest
+COPY . .
+CMD ["pytest", "tests/", "-v", "--tb=short"]
+EOF
+                    docker run --rm ${APP_NAME}:test-build
+                '''
             }
         }
-        stage('Run Tests') {
-            steps {
-                sh 'python -m pytest tests/ -v --tb=short'
-            }
-        }
+
         stage('SonarQube Analysis') {
             steps {
                 withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_TOKEN')]) {
                     sh '''
-                        sonar-scanner \
-                            -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                            -Dsonar.sources=. \
-                            -Dsonar.host.url=${SONAR_URL} \
-                            -Dsonar.login=${SONAR_TOKEN} \
-                            -Dsonar.python.version=3.10 \
-                            -Dsonar.inclusions=**/*.py \
-                            -Dsonar.exclusions=**/tests/**,**/__pycache__/**,**/*.pyc
+                        docker run --rm \
+                            -v $WORKSPACE:/workspace \
+                            -w /workspace \
+                            -e SONAR_TOKEN=${SONAR_TOKEN} \
+                            -e SONAR_URL=${SONAR_URL} \
+                            -e SONAR_PROJECT_KEY=${SONAR_PROJECT_KEY} \
+                            sonarsource/sonar-scanner-cli:4.8 \
+                            sonar-scanner \
+                                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                                -Dsonar.sources=. \
+                                -Dsonar.host.url=${SONAR_URL} \
+                                -Dsonar.login=${SONAR_TOKEN} \
+                                -Dsonar.python.version=3.10 \
+                                -Dsonar.inclusions=**/*.py \
+                                -Dsonar.exclusions=**/tests/**,**/__pycache__/**,**/*.pyc
                     '''
                 }
             }
         }
+
         stage('Build Docker Image') {
             steps {
                 sh 'docker build -t ${IMAGE_TAG} -f Dockerfile .'
             }
         }
+
         stage('Push Docker Image') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'docker-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
@@ -63,6 +80,7 @@ pipeline {
                 }
             }
         }
+
         stage('Update Manifest & Push to Git') {
             steps {
                 withCredentials([string(credentialsId: 'github', variable: 'GITHUB_TOKEN')]) {
