@@ -23,13 +23,13 @@ pipeline {
         }
         stage('Install Python Dependencies') {
             steps {
-                // Run pip directly in Jenkins container (python3 already available)
-                sh 'pip3 install --upgrade pip && pip3 install -r requirements.txt'
+                // PEP 668 fix: --break-system-packages for local dev
+                sh 'python -m pip install --upgrade pip --break-system-packages && python -m pip install -r requirements.txt --break-system-packages'
             }
         }
         stage('Run Tests') {
             steps {
-                sh 'pytest tests/ -v --tb=short'
+                sh 'python -m pytest tests/ -v --tb=short'
             }
         }
         stage('SonarQube Analysis') {
@@ -50,7 +50,6 @@ pipeline {
         }
         stage('Build Docker Image') {
             steps {
-                // Docker CLI already copied to Jenkins container
                 sh 'docker build -t ${IMAGE_TAG} -f Dockerfile .'
             }
         }
@@ -81,7 +80,6 @@ pipeline {
     }
     post {
         always {
-            // Safe cleanup: only dangling items
             sh 'docker image prune -f || true'
             sh 'docker container prune -f || true'
         }
