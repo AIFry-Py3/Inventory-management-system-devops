@@ -11,7 +11,7 @@ from db import get_all_products, get_product, get_low_stock, get_out_of_stock, g
 
 # ─── PAGE CONFIG ────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title=" MSME Inventory",
+    page_title=" MSME Inventory - DEVOPS NOW CHANGED",
     page_icon="📦",
     layout="wide",
     initial_sidebar_state="expanded",
