@@ -12,7 +12,7 @@ redis==5.0.3              # Redis client
 tenacity==8.2.3           # Retry logic for database connections
 
 # ── Testing (for CI pipeline) ───────────────────────────────────────────────
-pytest==8.1.1
+pytest==9.0.3
 pytest-cov==4.1.0
 
 # ── Optional: Production Enhancements ───────────────────────────────────────
