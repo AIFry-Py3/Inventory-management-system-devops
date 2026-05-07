@@ -10,7 +10,9 @@ pipeline {
 
         stage('Test') {
             steps {
-                sh 'pytest || exit 1'
+                sh '''
+                docker run --rm stockseva-app:${BUILD_NUMBER} pytest
+                '''
             }
         }
 
