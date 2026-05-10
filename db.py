@@ -59,10 +59,6 @@ def _init_redis():
             logger.error(f"❌ Failed to initialize Redis: {e}")
             raise
 
-# Lazy initialization on first use
-_init_db_pool()
-_init_redis()
-
 # ── Connection Helpers ─────────────────────────────────────────────────────
 
 # ─── CONNECTION HELPERS ───────────────────────────────────────────────────────
