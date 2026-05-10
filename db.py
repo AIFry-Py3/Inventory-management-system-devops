@@ -60,26 +60,21 @@ def _init_redis():
             raise
 
 # ── Connection Helpers ─────────────────────────────────────────────────────
-
-# ─── CONNECTION HELPERS ───────────────────────────────────────────────────────
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=10),
-    retry=retry_if_exception_type(Exception),
-    reraise=True
-)
 def get_pg_conn():
-    """Get a connection from the pool (auto-retries on transient failures)"""
+    global _pg_pool
+    if _pg_pool is None:
+        _init_db_pool()
     return _pg_pool.getconn()
 
+def get_redis():
+    global _redis_client
+    if _redis_client is None:
+        _init_redis()
+    return _redis_client
+
 def release_pg_conn(conn):
-    """Return a connection to the pool"""
     if conn:
         _pg_pool.putconn(conn)
-
-def get_redis():
-    """Get the Redis client"""
-    return _redis_client
 
 # ── Single Product Lookup with Caching ─────────────────────────────────────
 def get_product(product_id):
