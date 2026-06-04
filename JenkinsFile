@@ -36,5 +36,12 @@ pipeline {
                 '''
             }
         }
+
+        stage('Monitor') {
+            steps {
+                sh '''
+                    curl http://localhost:8501
+                '''
+        }
     }
 }
