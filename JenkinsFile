@@ -40,6 +40,7 @@ pipeline {
         stage('Monitor') {
             steps {
                 sh '''
+                    sleep 20
                     curl http://localhost:8501
                 '''
         }
