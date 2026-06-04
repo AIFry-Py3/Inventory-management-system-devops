@@ -41,7 +41,7 @@ pipeline {
             steps {
                 sh '''
                     sleep 20
-                    curl http://localhost:8501
+                    curl stockseva-app
                 '''
             }
         }
