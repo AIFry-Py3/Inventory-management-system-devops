@@ -6,6 +6,9 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import json
 
+
+
+#HELLO
 # ─── IMPORT FROM db.py ───────────────────────────────────────────────────────
 from db import get_all_products, get_product, get_low_stock, get_out_of_stock, get_top_products, invalidate_product, get_pg_conn, release_pg_conn, place_order, restock_product, add_product, remove_product
 
