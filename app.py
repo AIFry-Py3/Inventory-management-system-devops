@@ -23,7 +23,7 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-    --brand:        #FFFFFF;
+    --brand:        #875BF7;
     --brand-light:  #EEE9FE;
     --brand-dark:   #6741D9;
     --accent:       #F79009;
@@ -90,7 +90,7 @@ html, body, [class*="css"] {
 .section-header {
     font-size: 1.15rem;
     font-weight: 700;
-    color: var(--brand);
+    color: #FFFFF;
     margin: 1.5rem 0 0.75rem 0;
     padding-bottom: 0.5rem;
     border-bottom: 2px solid var(--brand-light);
