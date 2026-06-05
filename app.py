@@ -90,7 +90,7 @@ html, body, [class*="css"] {
 .section-header {
     font-size: 1.15rem;
     font-weight: 700;
-    color: #FFFFF;
+    color: #FFFFFF;
     margin: 1.5rem 0 0.75rem 0;
     padding-bottom: 0.5rem;
     border-bottom: 2px solid var(--brand-light);
