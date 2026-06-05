@@ -23,7 +23,7 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-    --brand:        #875BF7;
+    --brand:        #FFFFFF;
     --brand-light:  #EEE9FE;
     --brand-dark:   #6741D9;
     --accent:       #F79009;
